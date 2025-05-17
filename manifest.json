@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "cpm-gantt",
+	"name": "CPM Gantt",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Realiza os cálculos para encontrar o CPM e gerar um simples diagrama gantt no canvas.",
+	"author": "Welton Moura",
+	"authorUrl": "https://weltonmoura.com.br",
+	"fundingUrl": "https://weltonmoura.com.br",
 	"isDesktopOnly": false
 }

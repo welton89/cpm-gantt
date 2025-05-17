@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Método do Caminho Crítico - CPM</title>
+
+  <!-- jsPDF e html2canvas via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js "></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js "></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f3f4f6;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: auto;
+    }
+
+    form input, form button, select {
+      padding: 10px;
+      margin: 5px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: calc(20% - 10px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: white;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f9fafb;
+    }
+
+    .gantt-container {
+      margin-top: 30px;
+      overflow-x: auto;
+      height: 400px;
+      position: relative;
+      border: 1px solid #ddd;
+    }
+
+    #gantt-chart {
+      min-width: 1500px;
+      height: auto;
+      position: relative;
+    }
+
+    .critical-dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      background-color: red;
+      border-radius: 50%;
+      vertical-align: middle;
+    }
+
+    @media (max-width: 768px) {
+      form input, form button, select {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+    }
+
+    textarea {
+      width: 100%;
+      height: 300px;
+      margin-top: 20px;
+      font-family: monospace;
+    }
+
+    .export-buttons {
+      margin-top: 10px;
+    }
+
+    .zoom-controls {
+      margin-top: 10px;
+    }
+
+    .zoom-controls button {
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Método do Caminho Crítico (CPM)</h1>
+
+    <!-- Formulário -->
+    <form id="task-form">
+      <input type="number" id="id" placeholder="ID" required/>
+      <input type="text" id="name" placeholder="Nome" required/>
+      <input type="number" id="duration" placeholder="Duração" required/>
+      <input type="number" id="dependency" placeholder="Dependência (ID)"/>
+      <input type="text" id="responsible" placeholder="Responsável"/>
+      <button type="submit">Adicionar Tarefa</button>
+      <button type="button" onclick="saveEdit()">Salvar Alterações</button>
+    </form>
+
+    <!-- Tabela de Tarefas -->
+    <table id="tasks-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Nome</th><th>Duração</th><th>Dependência</th><th>Responsável</th>
+          <th>Início Cedo</th><th>Fim Cedo</th><th>Slack</th><th>Crítica</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- Gráfico de Gantt -->
+    <h2>Gráfico de Gantt</h2>
+    <div class="zoom-controls">
+      <button onclick="zoomGantt(1.2)">Zoom In</button>
+      <button onclick="zoomGantt(0.8)">Zoom Out</button>
+    </div>
+    <div class="gantt-container" id="gantt-wrapper">
+      <svg id="gantt-chart" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+
+    <p><span class="critical-dot"></span> - Tarefa Crítica | Caminho Crítico: <strong id="critical-path">-</strong></p>
+
+    <div class="export-buttons">
+      <button onclick="exportToPNG()">Exportar como PNG</button>
+      <button onclick="exportToPDF()">Exportar como PDF</button>
+    </div>
+
+    <!-- Markdown Input -->
+    <h2>Carregar/Exportar Tarefas (Markdown)</h2>
+    <textarea id="markdown-input" placeholder="Cole aqui a tabela Markdown..."></textarea>
+    <button onclick="loadFromMarkdown()">Carregar Tarefas</button>
+    <button onclick="exportToMarkdown()">Exportar como Markdown</button>
+    <button onclick="exportToCanvas()">Exportar como Canvas</button>
+
+  </div>
+
+  <script>
+    let tasks = [];
+    let zoomLevel = 1;
+
+    const taskForm = document.getElementById("task-form");
+    const idInput = document.getElementById("id");
+    const nameInput = document.getElementById("name");
+    const durationInput = document.getElementById("duration");
+    const dependencyInput = document.getElementById("dependency");
+    const responsibleInput = document.getElementById("responsible");
+
+    let editingId = null;
+
+    taskForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      const id = parseInt(idInput.value);
+      const name = nameInput.value.trim();
+      const duration = parseInt(durationInput.value);
+      const dependency = dependencyInput.value ? parseInt(dependencyInput.value) : null;
+      const responsible = responsibleInput.value.trim();
+
+      if (!id || !name || !duration || isNaN(duration)) {
+        alert("Por favor, preencha os campos obrigatórios corretamente.");
+        return;
+      }
+
+      if (editingId === null && tasks.some(t => t.id === id)) {
+        alert("Já existe uma tarefa com esse ID.");
+        return;
+      }
+
+      if (editingId !== null) {
+        const task = tasks.find(t => t.id === id);
+        if (task) {
+          task.name = name;
+          task.duration = duration;
+          task.dependency = dependency;
+          task.responsible = responsible;
+        }
+        editingId = null;
+      } else {
+        tasks.push({ id, name, duration, dependency, responsible });
+      }
+
+      updateTasks();
+      taskForm.reset();
+    });
+
+    function editTask(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+      idInput.value = task.id;
+      nameInput.value = task.name;
+      durationInput.value = task.duration;
+      dependencyInput.value = task.dependency ?? "";
+      responsibleInput.value = task.responsible;
+      editingId = id;
+    }
+
+    function deleteTask(id) {
+      tasks = tasks.filter(t => t.id !== id);
+      updateTasks();
+    }
+
+    function calculateCPM() {
+      const sorted = [...tasks].sort((a, b) => a.id - b.id);
+      const map = {};
+      let criticalPath = [];
+      let maxEndDate = 0;
+
+      for (const task of sorted) {
+        map[task.id] = { ...task };
+        let earlyStart = 0;
+
+        if (task.dependency !== null && map[task.dependency]) {
+          earlyStart = map[task.dependency].earlyFinish;
+        }
+
+        task.earlyStart = earlyStart;
+        task.earlyFinish = earlyStart + task.duration;
+        task.lateFinish = 0;
+        task.lateStart = 0;
+        task.slack = 0;
+        task.isCritical = false;
+      }
+
+      maxEndDate = Math.max(...sorted.map(t => t.earlyFinish));
+
+      for (const task of [...sorted].reverse()) {
+        let lateFinish = maxEndDate;
+
+        const dependents = sorted.filter(t => t.dependency === task.id);
+        if (dependents.length > 0) {
+          lateFinish = Math.min(...dependents.map(t => t.lateStart));
+        }
+
+        task.lateFinish = lateFinish;
+        task.lateStart = lateFinish - task.duration;
+        task.slack = task.lateFinish - task.earlyFinish;
+        task.isCritical = task.slack === 0;
+
+        if (task.isCritical) criticalPath.push(task.id);
+      }
+
+      return { tasks: sorted, criticalPath, maxEndDate };
+    }
+
+    function drawGantt(tasks, maxEndDate) {
+      const svg = document.getElementById("gantt-chart");
+      svg.innerHTML = "";
+      const chartWidth = 1000 * zoomLevel;
+      const scale = chartWidth / (maxEndDate || 1);
+      const barHeight = 30;
+      const rowHeight = 50;
+
+      svg.setAttribute("height", tasks.length * rowHeight + 20);
+
+      // Eixo horizontal
+      for (let i = 0; i <= maxEndDate; i++) {
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", i * scale);
+        text.setAttribute("y", 15);
+        text.setAttribute("font-size", 12 * zoomLevel);
+        text.setAttribute("fill", "#333");
+        text.textContent = i;
+        svg.appendChild(text);
+      }
+
+      // Barras das tarefas e linhas de dependência
+      tasks.forEach((task, index) => {
+        const x = task.earlyStart * scale;
+        const y = index * rowHeight + 20;
+        const width = task.duration * scale;
+
+        // Barra da tarefa
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", x);
+        rect.setAttribute("y", y);
+        rect.setAttribute("width", width);
+        rect.setAttribute("height", barHeight);
+        rect.setAttribute("fill", task.isCritical ? "#ef4444" : "#3b82f6");
+        rect.setAttribute("rx", 5 * zoomLevel);
+        svg.appendChild(rect);
+
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", x + 5 * zoomLevel);
+        label.setAttribute("y", y + barHeight / 2 + 5 * zoomLevel);
+        label.setAttribute("fill", "white");
+        label.setAttribute("font-size", 12 * zoomLevel);
+        label.textContent = task.name;
+        svg.appendChild(label);
+
+        // Linha de dependência
+        if (task.dependency !== null) {
+          const depTask = tasks.find(t => t.id === task.dependency);
+          if (depTask) {
+            const depIndex = tasks.findIndex(t => t.id === task.dependency);
+            const depX = depTask.earlyFinish * scale;
+            const depY = depIndex * rowHeight + 20 + barHeight / 2;
+
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", depX);
+            line.setAttribute("y1", depY);
+            line.setAttribute("x2", x);
+            line.setAttribute("y2", y + barHeight / 2);
+            line.setAttribute("stroke", "#000");
+            line.setAttribute("stroke-width", 2 * zoomLevel);
+            line.setAttribute("marker-end", "url(#arrow)");
+            svg.appendChild(line);
+          }
+        }
+      });
+
+      // Setas nas linhas
+      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+      marker.setAttribute("id", "arrow");
+      marker.setAttribute("markerWidth", "10");
+      marker.setAttribute("markerHeight", "10");
+      marker.setAttribute("refX", "5");
+      marker.setAttribute("refY", "3");
+      marker.setAttribute("orient", "auto");
+      marker.setAttribute("markerUnits", "strokeWidth");
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M0,0 L0,6 L9,3 z");
+      path.setAttribute("fill", "#000");
+
+      marker.appendChild(path);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+    }
+
+    function updateTasks() {
+      const { tasks: calculatedTasks, criticalPath, maxEndDate } = calculateCPM();
+      const tbody = document.querySelector("#tasks-table tbody");
+      tbody.innerHTML = "";
+
+      calculatedTasks.forEach(task => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${task.id}</td>
+          <td>${task.name}</td>
+          <td>${task.duration}</td>
+          
+          <td>
+            <button onclick="editTask(${task.id})">Editar</button>
+            <button onclick="deleteTask(${task.id})">Excluir</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById("critical-path").textContent = criticalPath.length > 0 ? criticalPath.join(", ") : "Nenhum";
+
+      drawGantt(calculatedTasks, maxEndDate);
+    }
+
+    function zoomGantt(factor) {
+      zoomLevel *= factor;
+      if (zoomLevel < 0.5) zoomLevel = 0.5;
+      if (zoomLevel > 3) zoomLevel = 3;
+      updateTasks();
+    }
+
+    async function exportToPNG() {
+      const wrapper = document.getElementById("gantt-wrapper");
+      const canvas = await html2canvas(wrapper, { scale: 2 });
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = "grafico_gantt.png";
+      link.click();
+    }
+
+    async function exportToPDF() {
+      const wrapper = document.getElementById("gantt-wrapper");
+      const canvas = await html2canvas(wrapper, { scale: 2 });
+      const imgData = canvas.toDataURL("image/png");
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF("l", "mm", "a4");
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save("grafico_gantt.pdf");
+    }
+
+    function loadFromMarkdown() {
+      const raw = document.getElementById("markdown-input").value;
+      const lines = raw.split("\n").filter(l => l.trim().startsWith("|"));
+      const rows = lines.slice(2);
+
+      tasks = rows.map(row => {
+        const cols = row.split("|").map(c => c.trim()).filter(Boolean);
+        return {
+          id: parseInt(cols[0]),
+          name: cols[1],
+          duration: parseInt(cols[2]),
+          dependency: cols[3] === '' ? null : parseInt(cols[3]),
+          responsible: cols[4]
+        };
+      });
+
+      updateTasks();
+    }
+
+    function exportToMarkdown() {
+      const headers = "| ID | Nome | Duração | Dependência | Responsável |\n|----|------|---------|-------------|-------------|\n";
+      const rows = tasks.map(t => 
+        `| ${t.id} | ${t.name} | ${t.duration} | ${t.dependency ?? ""} | ${t.responsible} |`
+      ).join("\n");
+      const markdown = headers + rows;
+
+      const blob = new Blob([markdown], { type: "text/markdown" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "tarefas.md";
+      link.click();
+    }
+
+
+    function exportToCanvas() {
+      let total_dias = 0
+      const headers = ` {"nodes":[`;
+      let dias = '';
+      let nodes = "";
+      let edges = '"edges":[';
+      const foot = '}';
+
+      for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        total_dias = t.earlyFinish > total_dias ? t.earlyFinish : total_dias
+        nodes += `{
+            "id": "${t.id}" ,
+            "type":"text",
+            "text":"[[${t.name}]]",
+            "x": ${t.earlyStart*130},
+            "y":${i*80},
+            "width":${t.duration * 130} ,
+            "height":60,
+            "color":"${t.isCritical ? 5 : 1}"
+            }
+            ${i+1 == tasks.length ? '],' : ',\n'}`;
+
+        if(t.dependency !='' && t.dependency != 'NaN' && t.dependency != '0' ){
+          edges+= `
+          {
+          "id":"${i}",
+          "fromNode":"${t.dependency}",
+          "fromSide":"right",
+          "toNode":"${t.id}",
+          "toSide":"left"},`
+
+
+        }
+      }
+      edges+= ']'
+      for ( let i = 0; i < total_dias; i++){
+        dias+= 
+            `
+            {"id":"dia${i+1}",
+            "type":"text",
+            "text":"${i+1}",
+            "x":${i*130},
+            "y":-120,
+            "width":130,
+            "height":50},
+
+            `
+      }
+
+      const canvas = headers + dias + nodes + edges + foot;
+
+      const blob = new Blob([canvas], { type: "text/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "tarefas.canvas";
+      link.click();
+    }
+  </script>
+</body>
+</html>

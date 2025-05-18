@@ -3,7 +3,7 @@ export class Task {
     name: string;
     responsible: string;
     duration: number;
-    dependency: Task | null;
+    dependency: Task[]; // Alterado de Task | null para Task[]
     earlyStart?: number; 
     earlyFinish?: number; 
     lateFinish?: number;
@@ -15,12 +15,12 @@ export class Task {
                 name: string, 
                 responsible: string, 
                 duration: number,
-                dependency: Task | null = null) {
+                dependency: Task[] = []) { // Valor padrão e tipo alterados
       this.id = id;
       this.name = name;
       this.responsible = responsible;
       this.duration = duration;
-      this.dependency = dependency;
+      this.dependency = dependency; // Agora é um array
       this.earlyStart = 0;
       this.earlyFinish = 0;
       this.lateFinish = 0;
@@ -45,15 +45,19 @@ export class Task {
     }
 
 
-    createEdges (i: number) {
-        let edge = {
-            id: `"edge-${this.id}"`,
-            fromNode: `${this.dependency!.id}`,
-            fromSide: "right",
-            toNode: `${this.id}`,
-            toSide: "left",
+    // Gera arestas para TODAS as dependências desta tarefa
+    createEdges (): any[] { // Removido parâmetro 'i' não utilizado, retorna array de arestas
+        const edges = [];
+        for (const depTask of this.dependency) {
+            edges.push({
+                id: `edge-${depTask.id}-to-${this.id}`, // ID da aresta mais específico
+                fromNode: `${depTask.id}`,
+                fromSide: "right",
+                toNode: `${this.id}`,
+                toSide: "left",
+            });
         }
-        return edge;
+        return edges;
     }
 }
 

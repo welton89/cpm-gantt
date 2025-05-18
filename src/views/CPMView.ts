@@ -55,7 +55,7 @@ export class CPMView extends ItemView {
       <input type="number" id="id" placeholder="ID" required />
       <input type="text" id="name" placeholder="Nome" required />
       <input type="number" id="duration" placeholder="Duração" required />
-      <input type="number" id="dependency" placeholder="Dependência" />
+      <input type="text" id="dependency" placeholder="Dependências (IDs, ex: 1,2)" />
       <input type="text" id="responsible" placeholder="Responsável" />
       <button type="submit">Adicionar Tarefa</button>
     `;
@@ -141,7 +141,7 @@ export class CPMView extends ItemView {
           <td>${task.id}</td>
           <td>${task.name}</td>
           <td>${task.duration}</td>
-          <td>${task.dependency?.name ?? "-"}</td>
+          <td>${task.dependency.map(dep => dep.name).join(', ') || "-"}</td>
           <td>${task.responsible}</td>
           <td>${task.earlyStart!+1}</td>
           <td>${task.earlyFinish}</td>
@@ -195,7 +195,7 @@ export class CPMView extends ItemView {
         idInput.readOnly = true; 
         nameInput.value = taskToEdit.name;
         durationInput.value = taskToEdit.duration.toString();
-        dependencyInput.value = taskToEdit.dependency ? taskToEdit.dependency.id.toString() : "";
+        dependencyInput.value = taskToEdit.dependency.map(dep => dep.id).join(',');
         responsibleInput.value = taskToEdit.responsible;
         submitButton.textContent = "Atualizar Tarefa";
         form.scrollIntoView({ behavior: "smooth" });
@@ -210,12 +210,10 @@ export class CPMView extends ItemView {
 
         tasks = tasks.filter(task => task.id !== taskIdToDelete);
 
-        // EN: Remove dependency from other tasks if they depended on the deleted task.
-        // PT-BR: Remove a dependência de outras tarefas se elas dependiam da tarefa apagada.
+        // EN: Remove the deleted task from other tasks' dependency lists.
+        // PT-BR: Remove a tarefa apagada das listas de dependência de outras tarefas.
         tasks.forEach(task => {
-            if (task.dependency && task.dependency.id === taskIdToDelete) {
-                task.dependency = null;
-            }
+            task.dependency = task.dependency.filter(dep => dep.id !== taskIdToDelete);
         });
 
         updateTasks();
@@ -249,7 +247,7 @@ export class CPMView extends ItemView {
       const currentIdStr = idInput.value;
       const name = nameInput.value.trim();
       const durationStr = durationInput.value;
-      const dependencyIDStr = dependencyInput.value;
+      const dependencyIDInput = dependencyInput.value.trim();
       const responsible = responsibleInput.value.trim() || "";
       const duration = parseInt(durationStr);
 
@@ -261,23 +259,35 @@ export class CPMView extends ItemView {
       }
 
       const currentId = parseInt(currentIdStr);
-      const dependencyID = dependencyIDStr ? parseInt(dependencyIDStr) : null;
       
-      // EN: Find the dependency task if specified.
-      // PT-BR: Encontra a tarefa de dependência se especificada.
-      let dependencyTask: Task | null = null;
-      if (dependencyID !== null) {
-          dependencyTask = tasks.find(t => t.id === dependencyID) || null;
-          if (!dependencyTask) {
-               new Notice(`⚠️ Dependência com ID ${dependencyID} não encontrada.`);
-               return;
-          }
-          if (dependencyTask && dependencyTask.id === currentId) {
-              new Notice(`⚠️ Uma tarefa não pode depender de si mesma (ID ${currentId}).`);
-              return;
-          }
-      }
+      // EN: Parse dependency IDs and find corresponding tasks.
+      // PT-BR: Analisa os IDs de dependência e encontra as tarefas correspondentes.
+      const dependencyIDs: number[] = dependencyIDInput
+        ? dependencyIDInput.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+        : [];
 
+      let dependencyTasks: Task[] = [];
+      if (dependencyIDs.length > 0) {
+          for (const depId of dependencyIDs) {
+              // Check for self-dependency
+              if (depId === currentId && editingTaskId === null) { // Ao adicionar
+                   new Notice(`⚠️ Uma tarefa não pode depender de si mesma (ID ${currentId}).`);
+                   return;
+              }
+              if (editingTaskId !== null && depId === editingTaskId) { // Ao atualizar
+                  new Notice(`⚠️ Uma tarefa não pode depender de si mesma (ID ${editingTaskId}).`);
+                  return;
+              }
+
+              const foundDep = tasks.find(t => t.id === depId);
+              if (!foundDep) {
+                  new Notice(`⚠️ Dependência com ID ${depId} não encontrada.`);
+                  return; 
+              }
+              dependencyTasks.push(foundDep);
+          }
+          // TODO: Adicionar detecção de ciclo de dependência aqui, se necessário.
+      }
       // EN: If editingTaskId is not null, update the existing task.
       // PT-BR: Se editingTaskId não for nulo, atualiza a tarefa existente.
       if (editingTaskId !== null) { 
@@ -286,7 +296,7 @@ export class CPMView extends ItemView {
               taskToUpdate.name = name;
               taskToUpdate.duration = duration;
               taskToUpdate.responsible = responsible;
-              taskToUpdate.dependency = dependencyTask;
+              taskToUpdate.dependency = dependencyTasks;
               new Notice(`✅ Tarefa ID ${editingTaskId} atualizada.`);
           }
           editingTaskId = null;
@@ -303,7 +313,7 @@ export class CPMView extends ItemView {
               new Notice(`⚠️ Já existe uma tarefa com o ID ${currentId}.`);
               return;
           }
-          tasks.push(new Task(currentId, name, responsible, duration, dependencyTask));
+          tasks.push(new Task(currentId, name, responsible, duration, dependencyTasks));
           new Notice("✅ Tarefa adicionada.");
       }
       updateTasks();

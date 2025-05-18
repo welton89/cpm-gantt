@@ -19,7 +19,9 @@ export async function insertTableInNote(tasks: Task[], app: App) {
   markdown += "|---|---|---|---|---|---|---|---|---|\n";
 
   tasks.forEach(task => {
-    markdown += `| ${task.id} | [[${task.name}]] | ${task.duration} | [[${task.dependency?.name ?? "-"}]] | [[${task.responsible ?? "-"}]] | ${task.earlyStart!+1} | ${task.earlyFinish ?? "-"} | ${task.slack ?? "-"} | ${task.isCritical ? "Sim" : "Não"} |\n`;
+    const dependencyNames = task.dependency.map(d => `[[${d.name}]]`).join(', ') || "-";
+    const responsibleName = task.responsible ? `[[${task.responsible}]]` : "-";
+    markdown += `| ${task.id} | [[${task.name}]] | ${task.duration} | ${dependencyNames} | ${responsibleName} | ${task.earlyStart!+1} | ${task.earlyFinish ?? "-"} | ${task.slack ?? "-"} | ${task.isCritical ? "Sim" : "Não"} |\n`;
   });
 
   try {

@@ -17,17 +17,35 @@ export async function saveToCanvas(tasks: Task[], app: App) {
       nodes: [],
       edges: [],
     };
-
+    let totalDays: number = 0;
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
+     if(task.earlyFinish! > totalDays){
+        totalDays = task.earlyFinish!;
+      }
+    
       if (task.earlyStart !== undefined) {
         let node = task.createNode(i);
         canvasData.nodes.push(node);
-        if (task.dependency) {
-          const edge = task.createEdges(i); 
-          canvasData.edges.push(edge);
+        
+        if (task.dependency && task.dependency.length > 0) { 
+          const newEdges = task.createEdges(); 
+          canvasData.edges.push(...newEdges); 
         }
       }
+    }
+
+    for ( let i = 0; i < totalDays; i++){
+      const day = 
+          {id:`day-${i+1}`,
+          type:"text",
+          text:`${i+1}`,
+          x:`${i*130}`,
+          y:-120,
+          width:130,
+          height:50}
+          canvasData.nodes.push(day);
+          
     }
 
     const canvasContent = JSON.stringify(canvasData, null, 2);
